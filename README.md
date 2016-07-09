@@ -1,4 +1,7 @@
 # zenci-shell
+![NPM](https://nodei.co/npm/zenci-shell.png?downloads=true&&downloadRank=true&stars=true)
+
+
 Wrapper class for Node.js [ssh2](https://www.npmjs.org/package/ssh2) shell command for running multiple commands
 
 This class is based https://github.com/cmp-202/ssh2shell.
