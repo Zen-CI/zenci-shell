@@ -81,7 +81,7 @@ host = {
   },
   onEnd:               function( notices, sshObj ) {
    //optional code to run at the end of the session
-   //noticess is array of all notices for each command.
+   //notices is array of all notices for each command.
   }
 };
 ```
@@ -161,7 +161,7 @@ var host = {
  ],
  onCommandComplete: function( notice, sshObj ) {
   //confirm it is the root home dir and change to root's .ssh folder
-  if (notice.command === "echo $(pwd)" && response.indexOf("/root") != -1 ) {
+  if (notice.command === "echo $(pwd)" && notice.output.indexOf("/root") != -1 ) {
    sshObj.commands.push("cd .ssh");
   }
   //we are listing the dir so output it to the msg handler
@@ -305,7 +305,7 @@ zenci-shell.on ("commandTimeout", function onCommandTimeout( notice, stream, con
 
 zenci-shell.on ("end", function onEnd( notices, sshObj ) { 
  //default: run host.onEnd function if defined 
- //sessionText is the full text response from the session for the host
+ //notices  is array of all notices for each command.
  //sshObj is the host object for this session
 });
 
