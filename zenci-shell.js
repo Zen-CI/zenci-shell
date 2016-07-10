@@ -43,14 +43,13 @@ var ZENCIShell = (function(superClass) {
      *    - connection ssh2 object
      */
     ZENCIShell.prototype._timedout = function() {
-      var _notice = {
+      this._notices[this.command] = {
         'command': this.command,
         'status': 1, //Set status to 1 as failed to timed out command.
         'time': new Date().getTime() - this._start_time,
         'output': this._buffer
-      }
-      this._notices[this.command] = _notice;
-      return this.emit('commandTimeout', _notice, this._stream, this.connection);
+      };
+      return this.emit('commandTimeout', this._notices[this.command], this._stream, this.connection);
     };
 
     /**
@@ -113,14 +112,13 @@ var ZENCIShell = (function(superClass) {
       }
       // we are receiving banner only when command is empty.
       if(this.command !== "") {
-        var _notice = {
+        this._notices[this.command] = {
           'command': this.command,
           'status': this._status,
           'time': this._total_time,
           'output': this._origin_command_output
-        }
-        this._notices[this.command] = _notice;
-        this.emit('commandComplete', _notice, this.sshObj);
+        };
+        this.emit('commandComplete', this._notices[this.command], this.sshObj);
       }
       if (this.sshObj.verbose) {
         this.emit('msg', this.sshObj.server.host + " verbose:" + this._buffer);
@@ -344,6 +342,14 @@ var ZENCIShell = (function(superClass) {
                   }
                 });
                 _this._stream.on("end", function() {
+                  if(_this._status == -1 ) {
+                    _this._notices[_this.command] = {
+                      'command': _this.command,
+                      'status': 1,
+                      'time': new Date().getTime() - _this._start_time,
+                      'output': _this._buffer
+                    };
+                  }
                   return _this.emit('end', _this._notices, _this.sshObj);
                 });
                 return _this._stream.on("close", function(code, signal) {
