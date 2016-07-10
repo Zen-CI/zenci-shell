@@ -269,7 +269,10 @@ var ZENCIShell = (function(superClass) {
       this.on("close", (function(_this) {
         return function(had_error) {
           if (_this.sshObj.onClose) {
-            _this.sshObj.onClose(had_error);
+            if(_this._status == -1 ){
+              had_error = true;
+            }
+            _this.sshObj.onClose(had_error, _this.command);
           }
           if (had_error) {
             return _this.emit("error", had_error, "Close");
