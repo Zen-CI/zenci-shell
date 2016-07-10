@@ -82,6 +82,14 @@ host = {
    //stream object used  to respond to the timeout without having to close the connection
    //connection object gives access to close the shell using connection.end()
   },
+  onError: function ( err, type, close ) {
+   //optional code for responding to error
+  },
+  onClose: function (  has_error, command ) {
+   //optional code for responding to close 
+   // has_error: boolean. True if error hapen
+   // command: latest command that was processing when connection get closed.
+  },
   onEnd:               function( notices, sshObj ) {
    //optional code to run at the end of the session
    //notices is array of all notices for each command.
@@ -147,34 +155,39 @@ dotenv.load();
 var Email = require('email');
 
 var host = {
- server:              {     
-  host:         process.env.HOST,
-  port:         process.env.PORT,
-  userName:     process.env.USER_NAME,
-  password:     process.env.PASSWORD,
-  passPhrase:   process.env.PASS_PHRASE,
-  privateKey:   require('fs').readFileSync(process.env.PRIV_KEY_PATH)
- },
- commands:      [
-  "echo $(pwd)",
-  "cd ~/",
-  "ls -l",
-  "echo $(pwd)",
-  "ls -l",
- ],
- onCommandComplete: function( notice, sshObj ) {
-  //confirm it is the root home dir and change to root's .ssh folder
-  if (notice.command === "echo $(pwd)" && notice.output.indexOf("/root") != -1 ) {
-   sshObj.commands.push("cd .ssh");
+  server:              {     
+    host:         process.env.HOST,
+    port:         process.env.PORT,
+    userName:     process.env.USER_NAME,
+    password:     process.env.PASSWORD,
+    passPhrase:   process.env.PASS_PHRASE,
+    privateKey:   require('fs').readFileSync(process.env.PRIV_KEY_PATH)
+  },
+  commands:      [
+    "echo $(pwd)",
+    "cd ~/",
+    "ls -l",
+    "echo $(pwd)",
+    "ls -l",
+  ],
+  onCommandComplete: function( notice, sshObj ) {
+    //confirm it is the root home dir and change to root's .ssh folder
+    if (notice.command === "echo $(pwd)" && notice.output.indexOf("/root") != -1 ) {
+     sshObj.commands.push("cd .ssh");
+    }
+    //we are listing the dir so output it to the msg handler
+    else if (notice.command === "ls -l"){      
+     console.log(notice.output);
+    }
+  },
+  onClose: function( has_error, command ) {
+    //has_error is true if session has bin interrupted.
+    //command is latest command that was processing and did not finish.
+    console.log(command);
+  },
+  onEnd: function( notices, sshObj ) {
+    console.log(notices);
   }
-  //we are listing the dir so output it to the msg handler
-  else if (notice.command === "ls -l"){      
-   console.log(notice.output);
-  }
- },
- onEnd: function( notices, sshObj ) {
-   console.log(notices);
- }
 };
 
 //Create a new instance

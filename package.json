@@ -1,6 +1,6 @@
 {
   "name": "zenci-shell",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Gormartsen",
   "description": "A wrapper class for node.js ssh2 to run multiple commands.",
   "main": "./zenci-shell.js",
@@ -19,8 +19,6 @@
     "server",
     "multiple",
     "commands",
-    "tunnel",
-    "tunnelling",
     "deploy",
     "automation"
   ],
