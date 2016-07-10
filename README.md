@@ -4,7 +4,7 @@
 
 Wrapper class for Node.js [ssh2](https://www.npmjs.org/package/ssh2) shell command for running multiple commands
 
-This class is based https://github.com/cmp-202/ssh2shell.
+This class is based on https://github.com/cmp-202/ssh2shell.
 Please check it first, maybe you do not need extra features provided by zenci-shell.
 
 *This class enables the following functionality:*

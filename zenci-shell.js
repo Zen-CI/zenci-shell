@@ -268,6 +268,9 @@ var ZENCIShell = (function(superClass) {
       })(this));
       this.on("close", (function(_this) {
         return function(had_error) {
+          if (_this.sshObj.onClose) {
+            _this.sshObj.onClose(had_error);
+          }
           if (had_error) {
             return _this.emit("error", had_error, "Close");
           } else {
@@ -279,6 +282,9 @@ var ZENCIShell = (function(superClass) {
         return function(err, type, close, callback) {
           if (close == null) {
             close = false;
+          }
+          if (_this.sshObj.onError) {
+            _this.sshObj.onError(err, type, close);
           }
           _this.emit('msg', (type + " error: ") + err);
           if (callback) {
