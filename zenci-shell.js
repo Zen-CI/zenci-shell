@@ -5,10 +5,10 @@
  */
 "use strict";
 
-var EventEmitter = require( "events" ).EventEmitter;
-var util = require("util");
+const EventEmitter = require( "events" ).EventEmitter;
+const util = require("util");
 
-var bind = function( fn, me ) { return function() { return fn.apply( me, arguments ); }; };
+const bind = function( fn, me ) { return function() { return fn.apply( me, arguments ); }; };
 
 /**
  * Object constructor.
