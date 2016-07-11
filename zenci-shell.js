@@ -60,6 +60,16 @@ var ZENCIShell = ( function( superClass ) {
       };
       return this.emit( "commandTimeout", this._notices[ this.command ], this._stream, this.connection );
     };
+    /**
+     * Timeout event handler.
+     *   Emit 'commandTimeout' event if timeout happend.
+     *    - _notice object with last command details.
+     *    - _stream ssh2-stream object
+     *    - connection ssh2 object
+     */
+    ZENCIShell.prototype._command_timeout = function() {
+      this._processNextCommand(true);
+    };
 
     /**
      * Process output from stream.
@@ -107,30 +117,32 @@ var ZENCIShell = ( function( superClass ) {
      *    - sshObj - settings for this class.
      *   or start 'echo -e "$?"' to get latest comman status.
      */
-    ZENCIShell.prototype._processNextCommand = function() {
-      if ( this._status === -1 && this.command !== "" && this.command !== 'echo -e "$?"' ) {
-        this._origin_command = this.command;
-        this._origin_command_output = this._buffer;
-        this._total_time = new Date().getTime() - this._start_time;
-        this.command = 'echo -e "$?"';
-        this._buffer = "";
-        return this._runCommand();
-      }
-      if ( this.command === 'echo -e "$?"' ) {
-        this.command = this._origin_command;
-      }
-      // We are receiving banner only when command is empty.
-      if ( this.command !== "" ) {
-        this._notices[ this.command ] = {
-          "command": this.command,
-          "status": this._status,
-          "time": this._total_time,
-          "output": this._origin_command_output
-        };
-        this.emit( "commandComplete", this._notices[ this.command ], this.sshObj );
-      }
-      if ( this.sshObj.verbose ) {
-        this.emit( "msg", this.sshObj.server.host + " verbose:" + this._buffer );
+    ZENCIShell.prototype._processNextCommand = function(byTimer) {
+      if(!byTimer) {
+        if ( this._status === -1 && this.command !== "" && this.command !== 'echo -e "$?"' ) {
+          this._origin_command = this.command;
+          this._origin_command_output = this._buffer;
+          this._total_time = new Date().getTime() - this._start_time;
+          this.command = 'echo -e "$?"';
+          this._buffer = "";
+          return this._runCommand();
+        }
+        if ( this.command === 'echo -e "$?"' ) {
+          this.command = this._origin_command;
+        }
+        // We are receiving banner only when command is empty.
+        if ( this.command !== "" ) {
+          this._notices[ this.command ] = {
+            "command": this.command,
+            "status": this._status,
+            "time": this._total_time,
+            "output": this._origin_command_output
+          };
+          this.emit( "commandComplete", this._notices[ this.command ], this.sshObj );
+        }
+        if ( this.sshObj.verbose ) {
+          this.emit( "msg", this.sshObj.server.host + " verbose:" + this._buffer );
+        }
       }
       this._buffer = "";
       if ( this.sshObj.commands.length > 0 ) {
@@ -140,10 +152,24 @@ var ZENCIShell = ( function( superClass ) {
         if ( this.command ) {
           return this._runCommand();
         } else {
-          return this._runExit();
+          //clear default timeout
+          if ( this._idleTimer ) {
+            clearTimeout( this._idleTimer );
+          }
+          if ( this._idleCommandTimer ) {
+            clearTimeout( this._idleCommandTimer );
+          }
+          return this._idleCommandTimer = setTimeout( this._command_timeout, this._idleCommandTime );
         }
       } else {
-        return this._runExit();
+        //clear default timeout
+        if ( this._idleTimer ) {
+          clearTimeout( this._idleTimer );
+        }
+        if ( this._idleCommandTimer ) {
+          clearTimeout( this._idleCommandTimer );
+        }
+        return this._idleCommandTimer = setTimeout( this._command_timeout, this._idleCommandTime );
       }
     };
     /**
@@ -207,6 +233,7 @@ var ZENCIShell = ( function( superClass ) {
       this.sshObj.pwSent = false;
       this.sshObj.sshAuth = false;
       this._idleTime = ( ref = this.sshObj.idleTimeOut ) != null ? ref : 5000;
+      this._idleCommandTime = ( ref = this.sshObj.idleCommandTimeOut ) != null ? ref : 100;
       this.passphrasePromt = new RegExp( "password.*" + this.sshObj.passphrasePromt + "\\s?$", "i" );
       return this.standardPromt = new RegExp( "zencishell: $" );
     };
@@ -222,6 +249,7 @@ var ZENCIShell = ( function( superClass ) {
       this._processNextCommand = bind( this._processNextCommand, this );
       this._processData = bind( this._processData, this );
       this._timedout = bind( this._timedout, this );
+      this._command_timeout = bind( this._command_timeout, this );
       this._loadDefaults();
       this.connection = new require( "ssh2" )();
       this.on( "connect", ( function( _this ) {
@@ -305,6 +333,18 @@ var ZENCIShell = ( function( superClass ) {
           }
         };
       } )( this ) );
+    }
+    /**
+     * Add command into commands pull.
+     */
+    ZENCIShell.prototype.exec = function(command) {
+      this.sshObj.commands.push(command);
+    }
+    /**
+     * Close SSH connection.
+     */
+    ZENCIShell.prototype.end = function() {
+      return this._stream.end( "exit\n" );
     }
     /**
      * Init ssh2 connection.
