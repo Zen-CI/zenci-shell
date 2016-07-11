@@ -44,6 +44,7 @@ var ZENCIShell = ( function( superClass ) {
 
     ZENCIShell.prototype._buffer = "";
 
+
     /**
      * Timeout event handler.
      *   Emit 'commandTimeout' event if timeout happend.
@@ -68,7 +69,7 @@ var ZENCIShell = ( function( superClass ) {
      *    - connection ssh2 object
      */
     ZENCIShell.prototype._command_timeout = function() {
-      this._processNextCommand(true);
+      this._processNextCommand();
     };
 
     /**
@@ -80,23 +81,47 @@ var ZENCIShell = ( function( superClass ) {
      */
     ZENCIShell.prototype._processData = function( data ) {
       this._buffer += data;
+      // Check for login prompt to know if command finished.
       if ( this.standardPromt.test( this._buffer ) ) {
         if ( this.sshObj.debug ) {
           this.emit( "msg", this.sshObj.server.host + ": normal prompt" );
         }
+
         // -13 is a length of hardcoded PS1 + COMMAND_PROMPT.
         if ( this._buffer.length >= 13 ) {
           this._buffer = this._buffer.substr( 0, this._buffer.length - 13 );
         }
-        //Cut out cmd line from buffer.
+
+        // Cut out cmd line from buffer.
         if ( this.command.length + 2 <= this._buffer.length ) {
           this._buffer =  this._buffer.substr( this.command.length + 2 );
         }
+
+        // Check for status command.
         if ( this.command == 'echo -e "$?"' ) {
           this._status = parseInt( this._buffer );
+          this.command = this._origin_command;
+          this._notices[ this.command ] = {
+            "command": this.command,
+            "status": this._status,
+            "time": this._total_time,
+            "output": this._origin_command_output
+          };
+          this.emit( "commandComplete", this._notices[ this.command ], this.sshObj );
+          return this._processNextCommand();
         }
-        return this._processNextCommand();
+
+        // If command finished (promt is here) and it is not a echo -e "$?"
+        // We need to start echo -e "$?" to get status.
+        this._origin_command = this.command;
+        this._origin_command_output = this._buffer;
+        this._total_time = new Date().getTime() - this._start_time;
+        this.command = 'echo -e "$?"';
+        this._buffer = "";
+        return this._runCommand();
+
       } else {
+        // Command is still running.
         var _notice = {
           "command": this.command,
           "status": this._status,
@@ -104,6 +129,8 @@ var ZENCIShell = ( function( superClass ) {
           "output": this._buffer
         };
         this.emit( "commandProcessing", _notice, this.sshObj, this._stream );
+
+        // Update timeout timer.
         if ( this._idleTimer ) {
           clearTimeout( this._idleTimer );
         }
@@ -117,33 +144,7 @@ var ZENCIShell = ( function( superClass ) {
      *    - sshObj - settings for this class.
      *   or start 'echo -e "$?"' to get latest comman status.
      */
-    ZENCIShell.prototype._processNextCommand = function(byTimer) {
-      if(!byTimer) {
-        if ( this._status === -1 && this.command !== "" && this.command !== 'echo -e "$?"' ) {
-          this._origin_command = this.command;
-          this._origin_command_output = this._buffer;
-          this._total_time = new Date().getTime() - this._start_time;
-          this.command = 'echo -e "$?"';
-          this._buffer = "";
-          return this._runCommand();
-        }
-        if ( this.command === 'echo -e "$?"' ) {
-          this.command = this._origin_command;
-        }
-        // We are receiving banner only when command is empty.
-        if ( this.command !== "" ) {
-          this._notices[ this.command ] = {
-            "command": this.command,
-            "status": this._status,
-            "time": this._total_time,
-            "output": this._origin_command_output
-          };
-          this.emit( "commandComplete", this._notices[ this.command ], this.sshObj );
-        }
-        if ( this.sshObj.verbose ) {
-          this.emit( "msg", this.sshObj.server.host + " verbose:" + this._buffer );
-        }
-      }
+    ZENCIShell.prototype._processNextCommand = function() {
       this._buffer = "";
       if ( this.sshObj.commands.length > 0 ) {
         this.command = this.sshObj.commands.shift();
@@ -151,26 +152,23 @@ var ZENCIShell = ( function( superClass ) {
         this._start_time = new Date().getTime();
         if ( this.command ) {
           return this._runCommand();
-        } else {
-          //clear default timeout
-          if ( this._idleTimer ) {
-            clearTimeout( this._idleTimer );
-          }
-          if ( this._idleCommandTimer ) {
-            clearTimeout( this._idleCommandTimer );
-          }
-          return this._idleCommandTimer = setTimeout( this._command_timeout, this._idleCommandTime );
         }
-      } else {
-        //clear default timeout
-        if ( this._idleTimer ) {
-          clearTimeout( this._idleTimer );
-        }
-        if ( this._idleCommandTimer ) {
-          clearTimeout( this._idleCommandTimer );
-        }
+      }
+
+      //clear default timeout
+      if ( this._idleTimer ) {
+        clearTimeout( this._idleTimer );
+      }
+      // Start waiting timer
+      if ( this._idleCommandTimer ) {
+        clearTimeout( this._idleCommandTimer );
+      }
+      if( this.sshObj.keep_alive) {
         return this._idleCommandTimer = setTimeout( this._command_timeout, this._idleCommandTime );
       }
+      // if this is not keep alive mode, close connection.
+      this.end();
+
     };
     /**
      * Write command to stream.
@@ -182,35 +180,38 @@ var ZENCIShell = ( function( superClass ) {
       return this._stream.write( this.command + "\n" );
     };
 
-    ZENCIShell.prototype._runExit = function() {
-      this.command = "exit";
-      if ( this.sshObj.exitCommands && this.sshObj.exitCommands.length > 0 ) {
-        if ( this.sshObj.debug ) {
-          this.emit( "msg", this.sshObj.server.host + ": Queued exit commands: " + this.sshObj.exitCommands );
-        }
-        this.command = this.sshObj.exitCommands.pop();
-        return this._runCommand();
-      } else {
-        if ( this.sshObj.debug ) {
-          this.emit( "msg", "Exit and close connection on: " + this.sshObj.server.host );
-        }
-        return this._stream.end( "exit\n" );
+    /**
+     * Add command into commands pull.
+     * @return bool TRUE if put in queue, FALSE if connection is not alive
+     */
+    ZENCIShell.prototype.exec = function(command) {
+      if(this.connection._sshstream.writable) {
+        this.sshObj.commands.push(command);
+        return true;
       }
-    };
+      return false;
+    }
+    /**
+     * Close SSH connection.
+     */
+    ZENCIShell.prototype.end = function() {
+      if ( this.sshObj.debug ) {
+        this.emit( "msg", "Exit and close connection on: " + this.sshObj.server.host );
+      }
+      if(this.connection._sshstream.writable) {
+        this.command = "exit";
+        this._stream.end( "exit\n" );
+        return true;
+      }
+      return false;
+    }
+
     /**
      * Set default values for settings.
      */
     ZENCIShell.prototype._loadDefaults = function() {
       var ref;
-      if ( !this.sshObj.msg ) {
-        this.sshObj.msg = {
-          send: ( function( _this ) {
-            return function( message ) {
-              return false;
-            };
-          } )( this )
-        };
-      }
+
       if ( !this.sshObj.connectedMessage ) {
         this.sshObj.connectedMessage = "Connected";
       }
@@ -226,25 +227,24 @@ var ZENCIShell = ( function( superClass ) {
       if ( !this.sshObj.debug ) {
         this.sshObj.debug = false;
       }
-      if ( !this.sshObj.passphrasePromt ) {
-        this.sshObj.passphrasePromt = ":";
+      if ( !this.sshObj.keep_alive ) {
+        this.sshObj.keep_alive = false;
       }
       this.sshObj.exitCommands = [];
-      this.sshObj.pwSent = false;
-      this.sshObj.sshAuth = false;
+
       this._idleTime = ( ref = this.sshObj.idleTimeOut ) != null ? ref : 5000;
       this._idleCommandTime = ( ref = this.sshObj.idleCommandTimeOut ) != null ? ref : 100;
-      this.passphrasePromt = new RegExp( "password.*" + this.sshObj.passphrasePromt + "\\s?$", "i" );
       return this.standardPromt = new RegExp( "zencishell: $" );
     };
+
     /**
      * Object constructor.
      */
     function ZENCIShell( sshObj1 ) {
       this.sshObj = sshObj1;
       this.connect = bind( this.connect, this );
+      this.end = bind( this.end, this );
       this._loadDefaults = bind( this._loadDefaults, this );
-      this._runExit = bind( this._runExit, this );
       this._runCommand = bind( this._runCommand, this );
       this._processNextCommand = bind( this._processNextCommand, this );
       this._processData = bind( this._processData, this );
@@ -252,99 +252,83 @@ var ZENCIShell = ( function( superClass ) {
       this._command_timeout = bind( this._command_timeout, this );
       this._loadDefaults();
       this.connection = new require( "ssh2" )();
-      this.on( "connect", ( function( _this ) {
-        return function() {
-          return _this.emit( "msg", _this.sshObj.connectedMessage );
-        };
-      } )( this ) );
-      this.on( "ready", ( function( _this ) {
-        return function() {
-          return _this.emit( "msg", _this.sshObj.readyMessage );
-        };
-      } )( this ) );
-      this.on( "msg", ( function( _this ) {
-        return function( message ) {
-          if ( _this.sshObj.msg ) {
-            return _this.sshObj.msg.send( message );
+
+      // Use a closure to preserve `this`
+      var self = this;
+
+      // Attach Events.
+      this.on( "connect", function() {
+        return self.emit( "msg", self.sshObj.connectedMessage );
+      });
+
+      this.on( "ready", function() {
+        return self.emit( "msg", self.sshObj.readyMessage );
+      });
+
+
+      this.on( "msg", function( message ) {
+        if ( self.sshObj.msg ) {
+          return self.sshObj.msg.send( message );
+        }
+      });
+
+      this.on( "commandProcessing", function( notice, sshObj, stream ) {
+        if ( self.sshObj.onCommandProcessing ) {
+          return self.sshObj.onCommandProcessing( notice, sshObj, stream );
+        }
+      });
+
+      this.on( "commandComplete", function( notice, sshObj ) {
+        if ( self.sshObj.onCommandComplete ) {
+          return self.sshObj.onCommandComplete( notice, sshObj );
+        }
+      });
+
+      this.on( "commandTimeout", function( notice, stream, connection ) {
+        if ( self.sshObj.onCommandTimeout ) {
+          return self.sshObj.onCommandTimeout( notice, stream, connection );
+        } else {
+          return self.emit( "error", self.sshObj.server.host + ": Command timed out after " + ( _this._idleTime / 1000 ) + " seconds", "Timeout", true, function( err, type ) {
+            return self._buffer;
+          } );
+        }
+      });
+
+      this.on( "end", function( notices, sshObj ) {
+        if ( self.sshObj.onEnd ) {
+          return self.sshObj.onEnd( notices, sshObj );
+        }
+      });
+
+      this.on( "close", function( had_error ) {
+        if ( self.sshObj.onClose ) {
+          if ( self._status == -1 ) {
+            had_error = true;
           }
-        };
-      } )( this ) );
-      this.on( "commandProcessing", ( function( _this ) {
-        return function( notice, sshObj, stream ) {
-          if ( _this.sshObj.onCommandProcessing ) {
-            return _this.sshObj.onCommandProcessing( notice, sshObj, stream );
-          }
-        };
-      } )( this ) );
-      this.on( "commandComplete", ( function( _this ) {
-        return function( notice, sshObj ) {
-          if ( _this.sshObj.onCommandComplete ) {
-            return _this.sshObj.onCommandComplete( notice, sshObj );
-          }
-        };
-      } )( this ) );
-      this.on( "commandTimeout", ( function( _this ) {
-        return function( notice, stream, connection ) {
-          if ( _this.sshObj.onCommandTimeout ) {
-            return _this.sshObj.onCommandTimeout( notice, stream, connection );
-          } else {
-            return _this.emit( "error", _this.sshObj.server.host + ": Command timed out after " + ( _this._idleTime / 1000 ) + " seconds", "Timeout", true, function( err, type ) {
-              return _this._buffer;
-            } );
-          }
-        };
-      } )( this ) );
-      this.on( "end", ( function( _this ) {
-        return function( notices, sshObj ) {
-          if ( _this.sshObj.onEnd ) {
-            return _this.sshObj.onEnd( notices, sshObj );
-          }
-        };
-      } )( this ) );
-      this.on( "close", ( function( _this ) {
-        return function( had_error ) {
-          if ( _this.sshObj.onClose ) {
-            if ( _this._status == -1 ) {
-              had_error = true;
-            }
-            _this.sshObj.onClose( had_error, _this.command );
-          }
-          if ( had_error ) {
-            return _this.emit( "error", had_error, "Close" );
-          } else {
-            return _this.emit( "msg", _this.sshObj.closedMessage );
-          }
-        };
-      } )( this ) );
-      this.on( "error", ( function( _this ) {
-        return function( err, type, close, callback ) {
-          if ( close == null ) {
-            close = false;
-          }
-          if ( _this.sshObj.onError ) {
-            _this.sshObj.onError( err, type, close );
-          }
-          _this.emit( "msg", ( type + " error: " ) + err );
-          if ( callback ) {
-            callback( err, type );
-          }
-          if ( close ) {
-            return _this.connection.end();
-          }
-        };
-      } )( this ) );
-    }
-    /**
-     * Add command into commands pull.
-     */
-    ZENCIShell.prototype.exec = function(command) {
-      this.sshObj.commands.push(command);
-    }
-    /**
-     * Close SSH connection.
-     */
-    ZENCIShell.prototype.end = function() {
-      return this._stream.end( "exit\n" );
+          self.sshObj.onClose( had_error, self.command );
+        }
+        if ( had_error ) {
+          return self.emit( "error", had_error, "Close" );
+        } else {
+          return self.emit( "msg", self.sshObj.closedMessage );
+        }
+      });
+
+      this.on( "error", function( err, type, close, callback ) {
+        if ( close == null ) {
+          close = false;
+        }
+        if ( self.sshObj.onError ) {
+          self.sshObj.onError( err, type, close );
+        }
+        self.emit( "msg", ( type + " error: " ) + err );
+        if ( callback ) {
+          callback( err, type );
+        }
+        if ( close ) {
+          return self.connection.end();
+        }
+      });
     }
     /**
      * Init ssh2 connection.
@@ -355,71 +339,55 @@ var ZENCIShell = ( function( superClass ) {
      */
     ZENCIShell.prototype.connect = function() {
       var e, error, ref, ref1;
+      var self = this;
       if ( this.sshObj.server && this.sshObj.commands ) {
-        try {
-          this.connection.on( "connect", ( function( _this ) {
-            return function() {
-              return _this.emit( "connect" );
-            };
-          } )( this ) );
-          this.connection.on( "ready", ( function( _this ) {
-            return function() {
-              _this.emit( "ready" );
-              return _this.connection.shell( { "cols": 1000, "modes": { "ECHO": 53 } }, function( err, _stream ) {
-                _this._stream = _stream;
-                if ( err ) {
-                  _this.emit( "error", err, "Shell", true );
-                }
-                _this._stream.write( "export PS1='zencishell: ';export PROMPT_COMMAND='echo -n \"_\"' ; sleep 1\n" );
-                _this._stream.on( "error", function( err ) {
-                  return _this.emit( "error", err, "Stream" );
-                } );
-                _this._stream.stderr.on( "data", function( data ) {
-                  return _this.emit( "stderr", data, "Stream STDERR" );
-                } );
-                _this._stream.on( "readable", function() {
-                  var data, e, error, results;
-                  try {
-                    results = [];
-                    while ( ( data = _this._stream.read() ) ) {
-                      results.push( _this._processData( "" + data ) );
-                    }
-                    return results;
-                  } catch ( error ) {
-                    e = error;
-                    return _this.emit( "error", e + " " + e.stack, "Processing response:", true );
-                  }
-                } );
-                _this._stream.on( "end", function() {
-                  if ( _this._status == -1 ) {
-                    _this._notices[ _this.command ] = {
-                      "command": _this.command,
-                      "status": 1,
-                      "time": new Date().getTime() - _this._start_time,
-                      "output": _this._buffer
-                    };
-                  }
-                  return _this.emit( "end", _this._notices, _this.sshObj );
-                } );
-                return _this._stream.on( "close", function( code, signal ) {
-                  if ( _this._idleTimer ) {
-                    clearTimeout( _this._idleTimer );
-                  }
-                  return _this.connection.end();
-                } );
+
+          this.connection.on( "connect", function() {
+            self.emit( "connect" );
+          });
+
+          this.connection.on( "ready", function() {
+            self.emit( "ready" );
+            return self.connection.shell( { "cols": 1000, "modes": { "ECHO": 53 } }, function( err, _stream ) {
+              self._stream = _stream;
+              if ( err ) {
+                self.emit( "error", err, "Shell", true );
+              }
+              self._stream.write( "export PS1='zencishell: ';export PROMPT_COMMAND='echo -n \"_\"' ; sleep 1\n" );
+              self._stream.on( "error", function( err ) {
+                return self.emit( "error", err, "Stream" );
               } );
-            };
-          } )( this ) );
-          this.connection.on( "error", ( function( _this ) {
-            return function( err ) {
-              return _this.emit( "error", err, "Connection", true );
-            };
-          } )( this ) );
-          this.connection.on( "close", ( function( _this ) {
-            return function( had_error ) {
-              return _this.emit( "close", had_error );
-            };
-          } )( this ) );
+              self._stream.on( "data", function(data) {
+                self._processData( "" + data );
+              });
+              self._stream.on( "end", function() {
+                if ( self._status == -1 ) {
+                  self._notices[ self.command ] = {
+                    "command": self.command,
+                    "status": 1,
+                    "time": new Date().getTime() - self._start_time,
+                    "output": self._buffer
+                  };
+                }
+                return self.emit( "end", self._notices, self.sshObj );
+              } );
+              return self._stream.on( "close", function( code, signal ) {
+                if ( self._idleTimer ) {
+                  clearTimeout( self._idleTimer );
+                }
+                return self.connection.end();
+              } );
+            } );
+          });
+
+          this.connection.on( "error", function(err) {
+            self.emit( "error", err, "Connection", true );
+          });
+
+          this.connection.on( "close", function( had_error ) {
+            self.emit( "close", had_error );
+          });
+
           return this.connection.connect( {
             host: this.sshObj.server.host,
             port: this.sshObj.server.port,
@@ -428,10 +396,7 @@ var ZENCIShell = ( function( superClass ) {
             privateKey: ( ref = this.sshObj.server.privateKey ) != null ? ref : "",
             passphrase: ( ref1 = this.sshObj.server.passPhrase ) != null ? ref1 : ""
           } );
-        } catch ( error ) {
-          e = error;
-          return this.emit( "error", e + " " + e.stack, "Connect:", true );
-        }
+
       } else {
         return this.emit( "error", "Missing connection parameters", "Parameters", false, missingParameters( err, type, close )( function() {
           this.emit( "msg", this.sshObj.server );
