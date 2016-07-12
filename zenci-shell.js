@@ -131,7 +131,7 @@ ZENCIShell.prototype._buffer = "";
 
 ZENCIShell.prototype._end = false;
 
-ZENCIShell.prototype.callback = function () { return FALSE; };
+ZENCIShell.prototype.callback = function () { return false; };
 
 /**
  * Timeout event handler.
@@ -317,7 +317,7 @@ ZENCIShell.prototype.end = function() {
   if ( this.sshObj.debug ) {
     this.emit( "msg", "Exit and close connection on: " + this.sshObj.server.host );
   }
-  if(this.connection._sshstream.writable) {
+  if(this._stream && this._stream.writable) {
     this.command = "exit";
     this.callback = function() { return false;};
     this._end = true;
