@@ -99,6 +99,7 @@ function ZENCIShell( sshObj1 ) {
       callback( err, type );
     }
     if ( close ) {
+      self._end = true;
       return self.connection.end();
     }
   });
@@ -128,7 +129,9 @@ ZENCIShell.prototype._data = "";
 
 ZENCIShell.prototype._buffer = "";
 
-ZENCIShell.prototype._callback = function () { return FALSE; };
+ZENCIShell.prototype._end = false;
+
+ZENCIShell.prototype.callback = function () { return FALSE; };
 
 /**
  * Timeout event handler.
@@ -239,24 +242,25 @@ ZENCIShell.prototype._processData = function( data ) {
  */
 ZENCIShell.prototype._processNextCommand = function() {
   this._buffer = "";
-  if ( this.sshObj.commands.length > 0 ) {
-    var nextCommand = this.sshObj.commands.shift();
-    if(!nextCommand.callback){
-      this.command = nextCommand;
-      this.callback = function() { return false;};
-    }
-    else{
-      this.command = nextCommand.command;
-      this.callback = nextCommand.callback;
-    }
+  if(!this._end) {
+    if ( this.sshObj.commands.length > 0 ) {
+      var nextCommand = this.sshObj.commands.shift();
+      if(!nextCommand.callback){
+        this.command = nextCommand;
+        this.callback = function() { return false;};
+      }
+      else{
+        this.command = nextCommand.command;
+        this.callback = nextCommand.callback;
+      }
 
-    this._status = -1;
-    this._start_time = new Date().getTime();
-    if ( this.command ) {
-      return this._runCommand();
+      this._status = -1;
+      this._start_time = new Date().getTime();
+      if ( this.command ) {
+        return this._runCommand();
+      }
     }
   }
-
   //clear default timeout
   if ( this._idleTimer ) {
     clearTimeout( this._idleTimer );
@@ -269,6 +273,7 @@ ZENCIShell.prototype._processNextCommand = function() {
     return this._idleCommandTimer = setTimeout( this._command_timeout, this._idleCommandTime );
   }
   // if this is not keep alive mode, close connection.
+  this._end = true;
   this.end();
 
 };
@@ -280,7 +285,10 @@ ZENCIShell.prototype._runCommand = function() {
   if ( this.sshObj.debug ) {
     this.emit( "msg", this.sshObj.server.host + ": next command: " + this.command );
   }
-  return this._stream.write( this.command + "\n" );
+  if(!this._end) {
+    return this._stream.write( this.command + "\n" );
+  }
+  return false;
 };
 
 /**
@@ -311,6 +319,8 @@ ZENCIShell.prototype.end = function() {
   }
   if(this.connection._sshstream.writable) {
     this.command = "exit";
+    this.callback = function() { return false;};
+    this._end = true;
     this._stream.end( "exit\n" );
     return true;
   }
@@ -393,6 +403,7 @@ ZENCIShell.prototype.connect = function() {
             if ( self._idleTimer ) {
               clearTimeout( self._idleTimer );
             }
+            self._end = true;
             return self.connection.end();
           } );
         } );
