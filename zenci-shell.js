@@ -7,7 +7,8 @@
 
 const EventEmitter = require( "events" ).EventEmitter;
 const util = require("util");
-const bind = function( fn, me ) { return function() { return fn.apply( me, arguments ); }; };
+// Debug module.
+const debugF = require( "debug" );
 
 /**
  * Object constructor.
@@ -15,14 +16,7 @@ const bind = function( fn, me ) { return function() { return fn.apply( me, argum
 function ZENCIShell( sshObj1 ) {
   EventEmitter.call(this);
   this.sshObj = sshObj1;
-  this.connect = bind( this.connect, this );
-  this.end = bind( this.end, this );
-  this._loadDefaults = bind( this._loadDefaults, this );
-  this._runCommand = bind( this._runCommand, this );
-  this._processNextCommand = bind( this._processNextCommand, this );
-  this._processData = bind( this._processData, this );
-  this._timedout = bind( this._timedout, this );
-  this._command_timeout = bind( this._command_timeout, this );
+
   this._loadDefaults();
   this.connection = new require( "ssh2" )();
 
@@ -61,6 +55,7 @@ function ZENCIShell( sshObj1 ) {
     if ( self.sshObj.onCommandTimeout ) {
       return self.sshObj.onCommandTimeout( notice, stream, connection );
     } else {
+//      self.connection.end();
       return self.emit( "error", self.sshObj.server.host + ": Command timed out after " + ( self._idleTime / 1000 ) + " seconds", "Timeout", true, function( err, type ) {
         return self._buffer;
       } );
@@ -68,6 +63,18 @@ function ZENCIShell( sshObj1 ) {
   });
 
   this.on( "end", function( notices, sshObj ) {
+//    console.log("Before emit end");
+//    console.log(this._notices);
+    if(self._status == -1 ) {
+      this._notices[this.command] = {
+        "command": this.command,
+        "status": 1,
+        "time": new Date().getTime() - this._start_time,
+        "output": this._buffer
+      };
+      this.emit( "commandComplete", this._notices[ this.command ], this.sshObj );
+      this.callback(this._notices[ this.command ]);
+    }
     if ( self.sshObj.onEnd ) {
       return self.sshObj.onEnd( notices, sshObj );
     }
@@ -99,8 +106,8 @@ function ZENCIShell( sshObj1 ) {
       callback( err, type );
     }
     if ( close ) {
-      self._end = true;
-      return self.connection.end();
+//      self._end = true;
+//      return self.connection.end();
     }
   });
 }
@@ -133,6 +140,12 @@ ZENCIShell.prototype._end = false;
 
 ZENCIShell.prototype.callback = function () { return false; };
 
+Deploy.prototype.debug = {
+  webhook: debugF( "ssh:webhook" ),
+  main: debugF( "ssh:deploy" ),
+  ssh: debugF( "ssh:ssh" )
+};
+
 /**
  * Timeout event handler.
  *   Emit 'commandTimeout' event if timeout happend.
@@ -141,12 +154,18 @@ ZENCIShell.prototype.callback = function () { return false; };
  *    - connection ssh2 object
  */
 ZENCIShell.prototype._timedout = function() {
-  this._notices[ this.command ] = {
-    "command": this.command,
-    "status": 1, //Set status to 1 as failed to timed out command.
-    "time": new Date().getTime() - this._start_time,
-    "output": this._buffer
-  };
+  var self = this;
+  self.debug.main( "%s ::\n %s", "init", JSON.stringify( this.data, null, 2 ) );
+  if ( this.sshObj.debug ) {
+    this.emit( "msg", this.sshObj.server.host + ": timeout triggered on : " + this.command );
+  }
+  var tmp_buf = this._buffer;
+  if ( this.command.length + 2 <= this._buffer.length ) {
+    tmp_buf =  this._buffer.substr( this.command.length + 2 );
+  }
+  this._stream.write('\x03' + " " );
+  
+
   return this.emit( "commandTimeout", this._notices[ this.command ], this._stream, this.connection );
 };
 
@@ -169,6 +188,10 @@ ZENCIShell.prototype._command_timeout = function() {
  *    - _stream ssh2-stream object
  */
 ZENCIShell.prototype._processData = function( data ) {
+  if ( this.sshObj.debug ) {
+    this.emit( "msg", this.sshObj.server.host + ": chunk data: " + data );
+  }
+
   this._buffer += data;
   // Check for login prompt to know if command finished.
   if ( this.standardPromt.test( this._buffer ) ) {
@@ -188,6 +211,9 @@ ZENCIShell.prototype._processData = function( data ) {
 
     // Check for status command.
     if ( this.command == 'echo -e "$?"' ) {
+      if ( this.sshObj.debug ) {
+        this.emit( "msg", this.sshObj.server.host + ": buffer: " + this._buffer );
+      }
       this._status = parseInt( this._buffer );
       this.command = this._origin_command;
       if(this.command != '') {
@@ -290,9 +316,9 @@ ZENCIShell.prototype._runCommand = function() {
   if ( this.sshObj.debug ) {
     this.emit( "msg", this.sshObj.server.host + ": next command: " + this.command );
   }
-  if(!this._end) {
+//  if(!this._end) {
     return this._stream.write( this.command + "\n" );
-  }
+//  }
   return false;
 };
 
@@ -303,14 +329,23 @@ ZENCIShell.prototype._runCommand = function() {
 ZENCIShell.prototype.exec = function(command, callback ) {
   if(this.connection._sshstream.writable) {
     if(callback){
+      console.log("Pushed " + command);
       this.sshObj.commands.push({
         command: command,
         callback: callback
       });
     } else {
+      console.log("Pushed " + command);
       this.sshObj.commands.push(command);
     }
     return true;
+  }else {
+    callback({
+      "command": command,
+      "status": 1,
+      "time": 0,
+      "output": "SSH is already closed"
+    });
   }
   return false;
 }
@@ -322,7 +357,7 @@ ZENCIShell.prototype.end = function() {
   if ( this.sshObj.debug ) {
     this.emit( "msg", "Exit and close connection on: " + this.sshObj.server.host );
   }
-  if(this._stream && this._stream.writable) {
+  if(this.connection._sshstream.writable) {
     this.command = "exit";
     this.callback = function() { return false;};
     this._end = true;
