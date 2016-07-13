@@ -61,7 +61,7 @@ function ZENCIShell( sshObj1 ) {
     if ( self.sshObj.onCommandTimeout ) {
       return self.sshObj.onCommandTimeout( notice, stream, connection );
     } else {
-      return self.emit( "error", self.sshObj.server.host + ": Command timed out after " + ( _this._idleTime / 1000 ) + " seconds", "Timeout", true, function( err, type ) {
+      return self.emit( "error", self.sshObj.server.host + ": Command timed out after " + ( self._idleTime / 1000 ) + " seconds", "Timeout", true, function( err, type ) {
         return self._buffer;
       } );
     }
@@ -215,11 +215,16 @@ ZENCIShell.prototype._processData = function( data ) {
   } else {
     // Command is still running.
     if(this.command != '') {
+      // Cut out cmd line from buffer.
+      var tmp_buf = this._buffer;
+      if ( this.command.length + 2 <= this._buffer.length ) {
+        tmp_buf =  this._buffer.substr( this.command.length + 2 );
+      }
       var _notice = {
         "command": this.command,
         "status": this._status,
         "time": new Date().getTime() - this._start_time,
-        "output": this._buffer
+        "output": tmp_buf
       };
       this.emit( "commandProcessing", _notice, this.sshObj, this._stream );
       this.callback(_notice);
