@@ -9,6 +9,8 @@ const EventEmitter = require( "events" ).EventEmitter;
 const util = require( "util" );
 const debugF = require( "debug" );
 
+const bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+
 /**
  * Object constructor.
  */
@@ -22,6 +24,8 @@ function ZENCIShell( sshObj1 ) {
   // Use a closure to preserve `this`
   var self = this;
 
+  this._timedout = bind( this._timedout, this );
+  this._command_timeout = bind( this._command_timeout, this );
   // Attach Events.
   this.on( "connect", function() {
     self.debug.events( "Connected" );
@@ -31,7 +35,7 @@ function ZENCIShell( sshObj1 ) {
     self.debug.events( "Ready" );
   } );
 
-  this.on( "end", function( notices, sshObj ) {
+  this.on( "end", function( notices ) {
     self.debug.events( "End" );
   } );
 
@@ -75,7 +79,7 @@ ZENCIShell.prototype._end = false;
 
 ZENCIShell.prototype.callback = function() { return false; };
 
-Deploy.prototype.debug = {
+ZENCIShell.prototype.debug = {
   events: debugF( "ssh:events" ),
   raw: debugF( "ssh:raw" )
 };
@@ -136,8 +140,8 @@ ZENCIShell.prototype._processData = function( data ) {
           "time": self._total_time,
           "output": self._origin_command_output
         };
-        self._notices.push = _notice;
-        this.emit( "commandComplete", notice );
+        self._notices.push(_notice);
+        this.emit( "commandComplete", _notice );
         self.debug.events( "Command %s finished in %s ms with status %s",
           self.command, self._total_time, self._status );
         this.callback( _notice );
@@ -361,16 +365,19 @@ ZENCIShell.prototype.connect = function() {
                   self._notices.push( _notice );
                 }
               }
-            }
-            this.emit( "commandComplete", _notice );
+              this.emit( "commandComplete", _notice );
             self.debug.events( "Command %s finished in %s ms with status %s",
               _notice.command, _notice.time, _notice._status );
+            }
             return self.emit( "end", self._notices );
           } );
 
           return self._stream.on( "close", function( code, signal ) {
             if ( self._idleTimer ) {
               clearTimeout( self._idleTimer );
+            }
+            if ( self._idleCommandTimer ) {
+              clearTimeout( self._idleCommandTimer );
             }
             return self.connection.end();
           } );
