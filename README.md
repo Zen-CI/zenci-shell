@@ -199,17 +199,6 @@ zenci-shell.on ("ready", function onReady() {
  //default: debug.events output Ready
 });
 
-zenci-shell.on ("commandProcessing", function onCommandProcessing( notice, sshObj, stream )  { 
- //default: runs host.onCommandProcessing function if defined 
-   // notice is object with next properties
-   //   command: is the command being run
-   //   status: -1 on this phase
-   //   time: result of `new Date().getTime()` when command has been started.
-   //   output: final output from command from start to end. Exclude command echo and shell prompt.
- //sshObj is the host object
- //stream is the session stream
-});
-    
 zenci-shell.on ("commandComplete", function onCommandComplete( notice ) { 
  //default: debug.events output "Command %s finished in %s ms with status %s"
    // notice is object with next properties
