@@ -8,7 +8,8 @@ var host = {
   server:        {
     host:         "localhost",
     userName:     "test",
-    password: 'test'
+    password: 'test',
+    keep_alive: true
   },
   commands:      [
     "echo $(pwd)",
@@ -26,3 +27,10 @@ SSH.on("end", function( command_log) {
 
 // Start the process.
 SSH.connect();
+
+SSH.exec("top -n 3", function(notice) {
+  console.log(notice);
+  if(notice.status >= 0 ){
+    SSH.end();
+  }
+})

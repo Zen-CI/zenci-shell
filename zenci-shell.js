@@ -280,15 +280,7 @@ ZENCIShell.prototype.exec = function( command, callback ) {
 ZENCIShell.prototype.end = function() {
   var self = this;
   self.debug.events( "Exit and close connection" );
-
-  if ( this.connection._sshstream.writable ) {
-    this.command = "exit";
-    this.callback = function() { return false;};
-    this._end = true;
-    this._stream.end( "exit\n" );
-    return true;
-  }
-  return false;
+  self.connection.end();
 };
 
 /**
@@ -300,7 +292,6 @@ ZENCIShell.prototype._loadDefaults = function() {
   if ( !this.sshObj.keep_alive ) {
     this.sshObj.keep_alive = false;
   }
-  this.sshObj.exitCommands = [];
 
   // Command timeout timer.
   this._idleTime = ( ref = this.sshObj.idleTimeOut ) != null ? ref : 5000;
@@ -391,7 +382,7 @@ ZENCIShell.prototype.connect = function() {
       this.connection.on( "close", function( had_error ) {
         var err = false;
         if ( had_error ) {
-          err = new Error( "COnnection closed due error" );
+          err = new Error( "Connection closed due error" );
         }
         self.emit( "close", err );
       } );
@@ -406,11 +397,7 @@ ZENCIShell.prototype.connect = function() {
       } );
 
   } else {
-    return this.emit( "error", "Missing connection parameters",
-    "Parameters", false, missingParameters( err, type, close )( function() {
-      this.emit( "msg", this.sshObj.server );
-      return this.emit( "msg", this.sshObj.commands );
-    } ) );
+    return this.emit( "error", new Error( "Missing connection parameters" ), "Parameters");
   }
 };
 
