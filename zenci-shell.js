@@ -9,7 +9,7 @@ const EventEmitter = require( "events" ).EventEmitter;
 const util = require( "util" );
 const debugF = require( "debug" );
 
-const bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+const bind = function( fn, me ) { return function() { return fn.apply( me, arguments ); }; };
 
 /**
  * Object constructor.
@@ -26,6 +26,7 @@ function ZENCIShell( sshObj1 ) {
 
   this._timedout = bind( this._timedout, this );
   this._command_timeout = bind( this._command_timeout, this );
+
   // Attach Events.
   this.on( "connect", function() {
     self.debug.events( "Connected" );
@@ -147,7 +148,7 @@ ZENCIShell.prototype._processData = function( data ) {
           "time": self._total_time,
           "output": self._origin_command_output
         };
-        self._notices.push(_notice);
+        self._notices.push( _notice );
         this.emit( "commandComplete", _notice );
         self.debug.events( "Command %s finished in %s ms with status %s",
           self.command, self._total_time, self._status );
@@ -400,7 +401,7 @@ ZENCIShell.prototype.connect = function() {
       } );
 
   } else {
-    return this.emit( "error", new Error( "Missing connection parameters" ), "Parameters");
+    return this.emit( "error", new Error( "Missing connection parameters" ), "Parameters" );
   }
 };
 
