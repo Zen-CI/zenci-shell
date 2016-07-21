@@ -81,6 +81,7 @@ ZENCIShell.prototype.callback = function() { return false; };
 
 ZENCIShell.prototype.debug = {
   events: debugF( "ssh:events" ),
+  debug: debugF( "ssh:debug" ),
   raw: debugF( "ssh:raw" )
 };
 
@@ -90,7 +91,7 @@ ZENCIShell.prototype.debug = {
  */
 ZENCIShell.prototype._timedout = function() {
   var self = this;
-  self.debug.events( "Timeout triggered on : %s", self.command );
+  self.debug.debug( "Timeout triggered on : %s", self.command );
   this._stream.write( "\x03" + " " );
 };
 
@@ -112,6 +113,12 @@ ZENCIShell.prototype._command_timeout = function() {
 ZENCIShell.prototype._processData = function( data ) {
   var self = this;
   self.debug.raw( "received : %s", data );
+
+  // Update timeout timer because we received some answer.
+  if ( self._idleTimer ) {
+    clearTimeout( self._idleTimer );
+  }
+  self._idleTimer = setTimeout( self._timedout, self._idleTime );
 
   this._buffer += data;
 
@@ -178,12 +185,6 @@ ZENCIShell.prototype._processData = function( data ) {
       self.debug.events( "Command %s is still runnung for %s ms", _notice.command, _notice.time );
       this.callback( _notice );
     }
-
-    // Update timeout timer because we received some answer.
-    if ( this._idleTimer ) {
-      clearTimeout( this._idleTimer );
-    }
-    return this._idleTimer = setTimeout( this._timedout, this._idleTime );
   }
 };
 
@@ -344,7 +345,7 @@ ZENCIShell.prototype.connect = function() {
                 "command": self.command,
                 "status": 1,
                 "time": new Date().getTime() - self._start_time,
-                "output": self._buffer
+                "output": self._buffer + "\nRemote connection closed.\n"
               };
               if ( self._notices.length == 0 ) {
                 self._notices.push( _notice );
@@ -356,9 +357,11 @@ ZENCIShell.prototype.connect = function() {
                   self._notices.push( _notice );
                 }
               }
-              this.emit( "commandComplete", _notice );
+              self.emit( "commandComplete", _notice );
             self.debug.events( "Command %s finished in %s ms with status %s",
               _notice.command, _notice.time, _notice._status );
+              self.callback( _notice );
+              self.emit( "error", new Error( "Connection closed due error" ), "Connection" );
             }
             return self.emit( "end", self._notices );
           } );
