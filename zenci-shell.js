@@ -24,6 +24,8 @@ function ZENCIShell( sshObj1 ) {
   // Use a closure to preserve `this`
   var self = this;
   this._notices = [];
+  this._buffer = '';
+  this.command = '';
 
   this._timedout = bind( this._timedout, this );
   this._command_timeout = bind( this._command_timeout, this );
@@ -302,7 +304,7 @@ ZENCIShell.prototype._loadDefaults = function() {
   // Command queue timer for keep alive mode.
   this._idleCommandTime = ( ref = this.sshObj.idleCommandTimeOut ) != null ? ref : 100;
 
-  return this.standardPrompt = new RegExp( "zencishell: $" );
+  return this.standardPrompt = new RegExp( "_zencishell: $" );
 };
 
 /**
