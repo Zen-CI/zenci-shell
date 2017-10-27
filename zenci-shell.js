@@ -23,6 +23,7 @@ function ZENCIShell( sshObj1 ) {
 
   // Use a closure to preserve `this`
   var self = this;
+  this._notices = [];
 
   this._timedout = bind( this._timedout, this );
   this._command_timeout = bind( this._command_timeout, this );
