@@ -32,19 +32,21 @@ The class expects an object with the following structure to be passed to its con
 ```javascript
 //Host object
 host = {
-  server:              {       
+  server:              {
     host:         "IP Address",
     port:         "external port number",
     userName:     "user name",
     password:     "user password",
     passPhrase:   "privateKeyPassphrase", //optional string
     privateKey:   require('fs').readFileSync('/path/to/private/key/id_rsa'), //optional string
-    keep_alive:   false //optional string. Do not close SSH connection and wait for new commands to run.
+    keep_alive:   false, //optional string. Do not close SSH connection and wait for new commands to run.
+    agent:        "SSH_AUTH_SOCK", //optional string. By default it is stroed here process.env.SSH_AUTH_SOCK.
+    agentForward: false, //optional string. The filed 'agent' must also be set to use this feature
   },
   commands:           ["Array", "of", "strings", "command"], //array() of command strings. IF keep_alive is true, this is optional.
   idleTimeOut:         5000,        //optional number in milliseconds
   idleCommandTime:    100,         //optional how often check for new commands in queue
-}; 
+};
 ```
 
 Minimal Example:
@@ -113,7 +115,7 @@ dotenv.load();
 var ZENCIShell = require ('zenci-shell');
 
 var host = {
-  server:              {     
+  server:              {
     host:         process.env.HOST,
     port:         process.env.PORT,
     userName:     process.env.USER_NAME,
@@ -164,7 +166,7 @@ Trouble shooting:
 
 Authentication:
 ---------------
-* When using key authentication you may require a valid passphrase if your key was created with one. 
+* When using key authentication you may require a valid passphrase if your key was created with one.
 
 
 
@@ -182,7 +184,7 @@ There is 3 levels of debug info:
 
 Event Handlers:
 ---------------
-By using `SSH.exec(command, function (notice) { // some action. })` 
+By using `SSH.exec(command, function (notice) { // some action. })`
 
 You can specify custom callback to handle next action based on output. All commands are running in sequential mode. So you can call SSH.exec without waiting for respond if needed.
 
@@ -191,15 +193,15 @@ You can specify custom callback to handle next action based on output. All comma
 **Class Instance Event Definitions:**
 
 ```javascript
-zenci-shell.on ("connect", function onConnect() { 
+zenci-shell.on ("connect", function onConnect() {
  //default: debug.events output Connected
 });
 
-zenci-shell.on ("ready", function onReady() { 
+zenci-shell.on ("ready", function onReady() {
  //default: debug.events output Ready
 });
 
-zenci-shell.on ("commandComplete", function onCommandComplete( notice ) { 
+zenci-shell.on ("commandComplete", function onCommandComplete( notice ) {
  //default: debug.events output "Command %s finished in %s ms with status %s"
    // notice is object with next properties
    //   command: is the command being run
@@ -208,7 +210,7 @@ zenci-shell.on ("commandComplete", function onCommandComplete( notice ) {
    //   output: final output from command from start to end. Exclude command echo and shell prompt.
 });
 
-zenci-shell.on ("commandProcessing", function onCommandComplete( notice ) { 
+zenci-shell.on ("commandProcessing", function onCommandComplete( notice ) {
  //default: debug.events output "Command %s is still runnung for %s ms"
    // notice is object with next properties
    //   command: is the command being run
@@ -217,19 +219,19 @@ zenci-shell.on ("commandProcessing", function onCommandComplete( notice ) {
    //   output: current output from command. Exclude command echo and shell prompt.
 });
 
-zenci-shell.on ("end", function onEnd( notices ) { 
- //default: debug.evens output End 
+zenci-shell.on ("end", function onEnd( notices ) {
+ //default: debug.evens output End
  //notices is array of all command objects.
 });
 
-zenci-shell.on ("close", function onClose(err) { 
- //default: debug.evens output Close 
+zenci-shell.on ("close", function onClose(err) {
+ //default: debug.evens output Close
  //err: new Error object if closed by error
 
 });
 
 zenci-shell.on ("error", function onError(err, type) {
- //default: debug.evens output Error type: % message: % 
+ //default: debug.evens output Error type: % message: %
  //err is the error message received
  //type is a string identifying the source of the error
 });

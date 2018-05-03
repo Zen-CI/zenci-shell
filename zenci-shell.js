@@ -400,7 +400,9 @@ ZENCIShell.prototype.connect = function() {
         username: this.sshObj.server.userName,
         password: this.sshObj.server.password,
         privateKey: ( ref = this.sshObj.server.privateKey ) != null ? ref : "",
-        passphrase: ( ref1 = this.sshObj.server.passPhrase ) != null ? ref1 : ""
+        passphrase: ( ref1 = this.sshObj.server.passPhrase ) != null ? ref1 : "",
+        agent: this.sshObj.server.agent || null,
+        agentForward: !!this.sshObj.server.agentForward
       } );
 
   } else {
